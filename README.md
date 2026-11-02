@@ -11,6 +11,12 @@ Shared GitHub Actions reusable security workflows, canonical `.gitleaks.toml` ba
 - **[`.gitleaks.toml`](.gitleaks.toml)** — Canonical secret-scanning ruleset extending Gitleaks defaults with explicit URL query-parameter credential detection (`?key=`, `?api_key=`, `?token=`, `?access_token=`, `?license_key=`) and zero `tests/` exclusions.
 - **[`SECURITY.md`](SECURITY.md)** — Account-wide default vulnerability disclosure policy inherited automatically by all public repositories under `github.com/lopes` unless overridden locally.
 
+> [!IMPORTANT]
+> **Why maintain an account-owned `.github` repository instead of calling a third-party workflow?**
+> 1. **Supply-chain containment:** Referencing an external vendor's `uses: org/repo/.github/workflows/...@main` across every public and private repository delegates runner execution and `GITHUB_TOKEN` access to a mutable third-party branch. Owning `lopes/.github` keeps version pinning (`gitleaks`, `opengrep`, `trivy-action`, `actions/checkout`) under direct control while still pulling official upstream binaries and actions.
+> 2. **Fast, focused execution (~25s vs. 5+ min):** Multi-linter suites (`super-linter`, `megalinter`) pull multi-gigabyte container images on every run and do not bundle `opengrep` or account-wide `.gitleaks.toml` inheritance.
+> 3. **Single source of truth:** Updating a scanner version or adding a custom secret rule in `.gitleaks.toml` happens in one commit here rather than opening pull requests across every repository, and GitHub only inherits default community health files (`SECURITY.md`) from `<owner>/.github`.
+
 ## Caller Usage
 
 Add `.github/workflows/security.yml` to any repository:
