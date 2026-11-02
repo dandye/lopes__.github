@@ -35,13 +35,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository (full git history)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           path: repo
 
       - name: Checkout shared security baseline
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: lopes/.github
           path: baseline
@@ -73,7 +73,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
           path: repo
@@ -104,7 +104,6 @@ jobs:
             --config /tmp/opengrep-rules \
             --severity ERROR \
             --error \
-            --metrics=off \
             --exclude=".git" \
             --exclude="node_modules" \
             --exclude=".venv" \
@@ -119,7 +118,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
