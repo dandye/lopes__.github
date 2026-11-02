@@ -96,12 +96,18 @@ jobs:
             terraform/lang/security \
             yaml/github-actions/security \
             generic/secrets
+          find /tmp/opengrep-rules -type f \( -name '*.test.yaml' -o -name '*.test.yml' -o ! -name '*.yaml' -a ! -name '*.yml' \) -delete
 
       - name: Run opengrep SAST (including tests/)
         run: |
           set -euo pipefail
           opengrep scan \
-            --config /tmp/opengrep-rules \
+            --config /tmp/opengrep-rules/python/lang/security \
+            --config /tmp/opengrep-rules/bash/lang/security \
+            --config /tmp/opengrep-rules/rust/lang/security \
+            --config /tmp/opengrep-rules/terraform/lang/security \
+            --config /tmp/opengrep-rules/yaml/github-actions/security \
+            --config /tmp/opengrep-rules/generic/secrets \
             --severity ERROR \
             --error \
             --exclude=".git" \
