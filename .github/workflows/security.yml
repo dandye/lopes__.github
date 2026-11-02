@@ -1,0 +1,134 @@
+---
+name: Security Guardrails
+
+on:
+  workflow_call:
+    inputs:
+      gitleaks_version:
+        description: "Pinned gitleaks release version"
+        required: false
+        type: string
+        default: "8.30.1"
+      trivy_severity:
+        description: "Trivy severity threshold for failing builds"
+        required: false
+        type: string
+        default: "CRITICAL,HIGH"
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"  # Weekly Monday 04:17 UTC
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: security-${{ github.repository }}-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: Secrets (gitleaks full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository (full git history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: repo
+
+      - name: Checkout shared security baseline
+        uses: actions/checkout@v4
+        with:
+          repository: lopes/.github
+          path: baseline
+
+      - name: Install pinned gitleaks
+        env:
+          GITLEAKS_VERSION: ${{ inputs.gitleaks_version || '8.30.1' }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+          chmod +x /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan full git history and working tree (including tests/)
+        run: |
+          set -euo pipefail
+          if [ -f repo/.gitleaks.toml ]; then
+            CONFIG_PATH="repo/.gitleaks.toml"
+          else
+            CONFIG_PATH="baseline/.gitleaks.toml"
+          fi
+          echo "Using gitleaks config: ${CONFIG_PATH}"
+          gitleaks git repo --config "${CONFIG_PATH}" --redact --verbose --exit-code 1
+
+  opengrep:
+    name: SAST (opengrep multi-language)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          path: repo
+
+      - name: Install opengrep static binary
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/opengrep/opengrep/releases/latest/download/opengrep_manylinux_x86" -o /usr/local/bin/opengrep
+          chmod +x /usr/local/bin/opengrep
+          opengrep --version
+
+      - name: Fetch open-source community rule packs
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/semgrep/semgrep-rules.git /tmp/opengrep-rules
+          git -C /tmp/opengrep-rules sparse-checkout set \
+            python/lang/security \
+            bash/lang/security \
+            rust/lang/security \
+            terraform/lang/security \
+            yaml/github-actions/security \
+            generic/secrets
+
+      - name: Run opengrep SAST (including tests/)
+        run: |
+          set -euo pipefail
+          opengrep scan \
+            --config /tmp/opengrep-rules \
+            --severity ERROR \
+            --error \
+            --metrics=off \
+            --exclude=".git" \
+            --exclude="node_modules" \
+            --exclude=".venv" \
+            --exclude="venv" \
+            --exclude="target" \
+            --exclude="__pycache__" \
+            repo
+
+  trivy:
+    name: IaC & Supply Chain (trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Trivy filesystem vulnerability and misconfiguration scan
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: ${{ inputs.trivy_severity || 'CRITICAL,HIGH' }}
+          ignore-unfixed: true
+          exit-code: "1"
