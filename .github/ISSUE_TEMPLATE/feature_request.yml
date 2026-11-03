@@ -1,0 +1,29 @@
+name: Feature / Enhancement
+description: "Propose a new secret detection rule, SAST check, or reusable workflow enhancement"
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What gap, limitation, or operational friction exists today, and why does solving it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: "Security rationale, false-positive analysis, execution time impact across caller repositories, and affected files (`.gitleaks.toml`, `security.yml`)."
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done
+      description: Concrete deliverables, invariants, and verification criteria required to close this issue.
+      value: |
+        - [ ] Rule or scanner change tested against synthetic fixtures with zero false negatives
+        - [ ] End-to-end reusable workflow runtime remains fast (<1 min)
+        - [ ] Documentation updated in `README.md`
+    validations:
+      required: true

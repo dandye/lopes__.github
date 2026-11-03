@@ -1,0 +1,10 @@
+# Global default code owners
+* @lopes
+
+# Reusable Security Workflows & Gitleaks Baseline
+/.github/workflows/ @lopes
+/.gitleaks.toml @lopes
+
+# Account-Wide Security Policy & Documentation
+/SECURITY.md @lopes
+/README.md @lopes

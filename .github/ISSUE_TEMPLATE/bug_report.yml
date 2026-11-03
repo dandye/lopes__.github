@@ -1,0 +1,49 @@
+name: Bug Report
+description: "Report a false positive, scanner failure, or workflow defect in the shared security pipeline"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report a defect, regression, or unexpected behavior in lopes/.github.
+  - type: dropdown
+    id: subsystem
+    attributes:
+      label: Affected Subsystem
+      options:
+        - "Gitleaks Secret Scanning (.gitleaks.toml, security.yml)"
+        - "Opengrep SAST Scanning (security.yml)"
+        - "Trivy Vulnerability & IaC Scanning (security.yml)"
+        - "Community Health Defaults (SECURITY.md)"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Bug
+      description: Clear and concise description of what is broken.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Exact commands, inputs, or steps that trigger the issue.
+      placeholder: |
+        1. Trigger `.github/workflows/security.yml` on a caller repository
+        2. Observe error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal Output / Error Logs
+      description: Paste relevant terminal output or stack trace here.
+      render: shell
