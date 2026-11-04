@@ -1,25 +1,52 @@
-# .github
+# lopes__.github (Hardened Security Guardrails)
 
-Shared GitHub Actions reusable security workflows, canonical `.gitleaks.toml` baseline, and default community health files for `github.com/lopes` repositories.
+Hardened reusable GitHub Actions security workflow, canonical [`.gitleaks.toml`](.gitleaks.toml) secret-scanning baseline, and offline local fleet scanner for `github.com/dandye` repositories.
+
+Adapted from upstream [`lopes/.github`](https://github.com/lopes/.github) with supply-chain, log-redaction, and configuration-inheritance hardening.
 
 ## What Lives Here
 
-- **[`.github/workflows/security.yml`](.github/workflows/security.yml)** — Reusable workflow (`workflow_call`) executing three open-source deterministic checks across all repository paths (including `tests/`):
-  1. **`gitleaks`** (`v8.30.1`) — Full git commit-history secret scan (`fetch-depth: 0`, `--redact`). Uses the caller repository's `.gitleaks.toml` if present, or falls back to this repository's canonical [`.gitleaks.toml`](.gitleaks.toml).
-  2. **`opengrep`** — Open-source multi-language static analysis (`python`, `bash`, `rust`, `terraform`, `yaml/github-actions`, `generic/secrets`) at `ERROR` severity.
-  3. **`trivy`** (`aquasecurity/trivy-action`) — Filesystem dependency vulnerability (`CRITICAL,HIGH` with available fixes) and IaC misconfiguration scan (Terraform, Ansible, Dockerfiles, GitHub Actions, and lockfiles).
-- **[`.gitleaks.toml`](.gitleaks.toml)** — Canonical secret-scanning ruleset extending Gitleaks defaults with explicit URL query-parameter credential detection (`?key=`, `?api_key=`, `?token=`, `?access_token=`, `?license_key=`) and zero `tests/` exclusions.
-- **[`SECURITY.md`](SECURITY.md)** — Account-wide default vulnerability disclosure policy inherited automatically by all public repositories under `github.com/lopes` unless overridden locally.
+- **[`.github/workflows/security.yml`](.github/workflows/security.yml)** — Reusable workflow (`workflow_call`) executing three deterministic checks across all repository paths (including `tests/` and lockfiles):
+  1. **`gitleaks`** (`v8.30.1`, SHA-256 verified) — Scans both full Git commit history (`fetch-depth: 0`) and working-tree files with `--redact=100`. Composes any caller `.gitleaks.toml` **on top of** [`.gitleaks.toml`](.gitleaks.toml) via [`scripts/prepare_gitleaks_config.py`](scripts/prepare_gitleaks_config.py) so caller allowlists never drop baseline rules and cannot exclude `tests/` or lockfiles.
+  2. **`opengrep`** (`v1.33.1`, SHA-256 + Sigstore Cosign verified) — Multi-language AST static analysis (`python`, `bash`, `rust`, `go`, `typescript`, `javascript`, `dockerfile`, `terraform` including AWS/GCP/Azure, and `yaml/github-actions`) pinned to an immutable `semgrep-rules` commit SHA. Renders findings via [`scripts/format_opengrep_findings.py`](scripts/format_opengrep_findings.py) so matched source lines are never echoed into GitHub Actions logs.
+  3. **`trivy`** (`v0.76.1`, SHA-256 verified) — Direct standalone binary vulnerability and IaC misconfiguration scan (eliminating third-party composite action tag chains), failing on `CRITICAL,HIGH` findings (including unfixed 0-day CVEs by default).
+- **[`.gitleaks.toml`](.gitleaks.toml)** — Canonical secret-scanning ruleset extending Gitleaks defaults with:
+  - `url-query-or-fragment-secret`: URL query (`?key=`, `&token=`, `&sig=`) and OAuth fragment (`#access_token=`, `#id_token=`) credentials, including URL percent-encoded (`%2B`, `%2F`, `%3D`) and Base64 (`+`, `/`, `=`) characters.
+  - `authenticated-url-credentials`: Basic-auth or token credentials embedded in HTTP/Git/SSH URLs or lockfiles (`uv.lock`, `poetry.lock`, `.npmrc`).
+  - `unprefixed-header-api-key`: High-entropy unprefixed keys assigned to `AppKey`, `X-Api-Key`, `shodan_api_key`, or `soar_api_key`.
+  - `internal-corporate-hostname`: Non-public `.corp.*`, `.internal`, and `.localdomain` hostnames.
+- **[`scripts/scan_secrets.sh`](scripts/scan_secrets.sh)** — Offline local secret scanner that bootstraps a SHA-256-verified `gitleaks` binary into `~/.cache/security-guardrails/` and scans either a single repository or an entire directory fleet (`--fleet`) with `--redact=100`.
+- **[`tests/test_guardrails.py`](tests/test_guardrails.py)** — Self-test suite verifying secret detection rules, allowlist boundaries, 2-level config composition, CI log redaction, and workflow supply-chain invariants.
 
-> [!IMPORTANT]
-> **Why maintain an account-owned `.github` repository instead of calling a third-party workflow?**
-> 1. **Supply-chain containment:** Referencing an external vendor's `uses: org/repo/.github/workflows/...@main` across every public and private repository delegates runner execution and `GITHUB_TOKEN` access to a mutable third-party branch. Owning `lopes/.github` keeps version pinning (`gitleaks`, `opengrep`, `trivy-action`, `actions/checkout`) under direct control while still pulling official upstream binaries and actions.
-> 2. **Fast, focused execution (~25s vs. 5+ min):** Multi-linter suites (`super-linter`, `megalinter`) pull multi-gigabyte container images on every run and do not bundle `opengrep` or account-wide `.gitleaks.toml` inheritance.
-> 3. **Single source of truth:** Updating a scanner version or adding a custom secret rule in `.gitleaks.toml` happens in one commit here rather than opening pull requests across every repository, and GitHub only inherits default community health files (`SECURITY.md`) from `<owner>/.github`.
+## Supply-Chain & CI Security Model
 
-## Caller Usage
+1. **Deny-all default token scope:** Workflow-level `permissions: {}` with per-job `contents: read` only (no unused `security-events: write` scope).
+2. **Ephemeral checkout credentials:** Every `actions/checkout` step is pinned to a 40-character commit SHA and sets `persist-credentials: false` so `GITHUB_TOKEN` is wiped from `.git/config` before any scanner executes.
+3. **Cryptographic binary & rule verification:** Every downloaded scanner binary (`gitleaks`, `opengrep`, `trivy`) is pinned by exact version and verified via `sha256sum -c` (plus Sigstore `cosign verify-blob` on `opengrep`), and SAST rules are fetched by immutable 40-character commit SHA.
+4. **Zero template injection:** No `${{ ... }}` expressions appear inside `run:` shell scripts; all inputs pass through `env:` variables with strict regex validation.
+5. **Self-referential baseline resolution:** The baseline checkout dynamically resolves its repository and ref from `github.workflow_ref`, ensuring callers pinned to a commit SHA also load `.gitleaks.toml` from that exact commit.
 
-Add `.github/workflows/security.yml` to any repository:
+## Local Secret Scanning Usage
+
+Scan a single repository or worktree (both full Git history and untracked/unstaged working-tree files):
+
+```bash
+TARGET_REPO="$HOME/Projects/my_project__worktrees/main"
+./scripts/scan_secrets.sh "$TARGET_REPO"
+```
+
+Scan an entire directory of repositories and linked worktrees offline:
+
+```bash
+PROJECTS_DIR="$HOME/Projects"
+./scripts/scan_secrets.sh --fleet "$PROJECTS_DIR"
+```
+
+Optional workstation-local rules (kept outside public repositories) can be placed in `${XDG_CONFIG_HOME:-$HOME/.config}/security-guardrails/local.toml` and are automatically layered onto `.gitleaks.toml`.
+
+## Caller Workflow Usage
+
+Pin the reusable workflow to a full 40-character commit SHA in `.github/workflows/security.yml`:
 
 ```yaml
 ---
@@ -32,11 +59,18 @@ on:
   schedule:
     - cron: "17 4 * * 1"
 
-permissions:
-  contents: read
-  security-events: write
+permissions: {}
 
 jobs:
   security:
-    uses: lopes/.github/.github/workflows/security.yml@main
+    permissions:
+      contents: read
+    uses: dandye/lopes__.github/.github/workflows/security.yml@<40-char-commit-sha>
+```
+
+## Running the Self-Test Suite
+
+```bash
+GITLEAKS_BIN="$HOME/.cache/security-guardrails/gitleaks-8.30.1/gitleaks"
+python3 tests/test_guardrails.py --gitleaks-bin "$GITLEAKS_BIN"
 ```

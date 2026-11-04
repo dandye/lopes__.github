@@ -5,16 +5,16 @@ body:
   - type: markdown
     attributes:
       value: |
-        Report a defect, regression, or unexpected behavior in lopes/.github.
+        Report a defect, regression, or unexpected behavior in dandye/lopes__.github.
   - type: dropdown
     id: subsystem
     attributes:
       label: Affected Subsystem
       options:
-        - "Gitleaks Secret Scanning (.gitleaks.toml, security.yml)"
-        - "Opengrep SAST Scanning (security.yml)"
+        - "Gitleaks Secret Scanning (.gitleaks.toml, prepare_gitleaks_config.py, scan_secrets.sh)"
+        - "Opengrep SAST Scanning (security.yml, format_opengrep_findings.py)"
         - "Trivy Vulnerability & IaC Scanning (security.yml)"
-        - "Community Health Defaults (SECURITY.md)"
+        - "Security Policy & Documentation (SECURITY.md, README.md)"
     validations:
       required: true
   - type: textarea
@@ -30,7 +30,7 @@ body:
       label: Steps to Reproduce
       description: Exact commands, inputs, or steps that trigger the issue.
       placeholder: |
-        1. Trigger `.github/workflows/security.yml` on a caller repository
+        1. Trigger `.github/workflows/security.yml` or `./scripts/scan_secrets.sh`
         2. Observe error
     validations:
       required: true
@@ -44,6 +44,6 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Terminal Output / Error Logs
-      description: Paste relevant terminal output or stack trace here.
+      label: Redacted Terminal Output / Error Logs
+      description: Paste relevant redacted terminal output or stack trace here (never paste raw credentials).
       render: shell
