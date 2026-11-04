@@ -103,12 +103,26 @@ jobs:
             yaml/github-actions/security
           find /tmp/opengrep-rules -type f \( -name '*.test.yaml' -o -name '*.test.yml' -o ! -name '*.yaml' -a ! -name '*.yml' \) -delete
 
-      - name: Run opengrep SAST (snippet-redacted output)
+      - name: Run opengrep SAST (snippet-redacted output, including tests/)
         working-directory: repo
         run: |
           set -euo pipefail
+          # Opengrep ships a compiled-in default .semgrepignore that skips
+          # tests/ even when the repository has no .semgrepignore file.
+          # Provide an explicit ignore list so tests/ is actually scanned.
+          cat > /tmp/opengrep.ignore <<'EOF'
+          .git/
+          node_modules/
+          .venv/
+          venv/
+          target/
+          __pycache__/
+          EOF
+
           set +e
           opengrep scan \
+            --experimental \
+            --semgrepignore-filename /tmp/opengrep.ignore \
             --config /tmp/opengrep-rules/python/lang/security \
             --config /tmp/opengrep-rules/bash/lang/security \
             --config /tmp/opengrep-rules/rust/lang/security \
@@ -117,12 +131,6 @@ jobs:
             --severity ERROR \
             --error \
             --json \
-            --exclude=".git" \
-            --exclude="node_modules" \
-            --exclude=".venv" \
-            --exclude="venv" \
-            --exclude="target" \
-            --exclude="__pycache__" \
             . > /tmp/opengrep-results.json
           SCAN_RC=$?
           set -e
