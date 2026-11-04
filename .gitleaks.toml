@@ -3,39 +3,119 @@ title = "github.com/lopes canonical gitleaks configuration"
 [extend]
 useDefault = true
 
+[[allowlists]]
+description = "Allow explicit uppercase synthetic test placeholders across built-in and custom rules without excluding test paths"
+regexTarget = "secret"
+regexes = [
+  '''^SYNTHETIC_TEST_[A-Z0-9_]{1,64}$''',
+  '''^REDACTED$''',
+  '''^EXAMPLE_[A-Z0-9_]{1,32}$''',
+  '''^DUMMY_[A-Z0-9_]{1,32}$''',
+  '''^YOUR_[A-Z0-9_]{1,32}_HERE$''',
+]
+
 [[rules]]
-id = "url-query-api-key"
-description = "High-entropy API key or token passed via URL query parameter"
-regex = '''[?&](?i:(?:api_?key|key|token|access_token|auth_token|license_key|secret))=([A-Za-z0-9._~+-]{16,128})'''
+id = "url-query-or-fragment-secret"
+description = "High-entropy API key, token, or signature in URL query parameter or OAuth fragment"
+regex = '''[?&#](?i:(?:api_?key|app_?key|key|token|access_token|auth_token|id_token|refresh_token|client_secret|license_key|secret|sig|signature))=([A-Za-z0-9._~+/=%-]{16,512})'''
 secretGroup = 1
-entropy = 3.2
+entropy = 3.3
 keywords = [
   "key=",
   "api_key=",
   "apikey=",
+  "app_key=",
+  "appkey=",
   "token=",
   "access_token=",
   "auth_token=",
+  "id_token=",
+  "refresh_token=",
+  "client_secret=",
   "license_key=",
   "secret=",
+  "sig=",
+  "signature=",
 ]
 
   [rules.allowlist]
-  description = "Ignore explicit RFC/synthetic test placeholders"
+  description = "Ignore explicit uppercase synthetic test placeholders only"
   regexTarget = "secret"
   regexes = [
-    '''(?i)^SYNTHETIC_TEST_[A-Z0-9_]+$''',
-    '''(?i)^REDACTED$''',
-    '''(?i)^EXAMPLE_[A-Z0-9_]+$''',
-    '''(?i)^DUMMY_[A-Z0-9_]+$''',
-    '''(?i)^YOUR_[A-Z0-9_]+$''',
-    '''(?i)^test-only-[a-z0-9-]+$''',
+    '''^SYNTHETIC_TEST_[A-Z0-9_]{1,64}$''',
+    '''^REDACTED$''',
+    '''^EXAMPLE_[A-Z0-9_]{1,32}$''',
+    '''^DUMMY_[A-Z0-9_]{1,32}$''',
+    '''^YOUR_[A-Z0-9_]{1,32}_HERE$''',
   ]
 
-# Intentionally NO path exclusions for tests/, spec/, fixtures/, or docs/:
-# unit test fixtures pasted from real runtime logs are a primary secret leak vector.
-[allowlist]
-description = "Global baseline allowlist (only non-secret lock/binary artifacts)"
-paths = [
-  '''(^|/)(?:uv\.lock|Cargo\.lock|poetry\.lock|package-lock\.json|pnpm-lock\.yaml)$''',
+[[rules]]
+id = "authenticated-url-credentials"
+description = "Embedded basic-auth or token credentials in HTTP/Git/SSH URLs or lockfiles"
+regex = '''(?i)\b(?:https?|git|ssh)://[^/\s:@"'<>{}]{1,64}:([^/\s@"'<>{}]{8,256})@[A-Za-z0-9.-]+'''
+secretGroup = 1
+entropy = 2.8
+keywords = [
+  "://",
 ]
+
+  [rules.allowlist]
+  description = "Ignore RFC 2606 documentation placeholders and explicit REDACTED literals"
+  regexTarget = "line"
+  regexes = [
+    '''(?i)://(?:user|username|example|placeholder):(?:pass|password|REDACTED|SYNTHETIC_TEST_[A-Z0-9_]+)@(?:[a-z0-9-]+\.)*example\.(?:com|org|net)\b''',
+  ]
+
+[[rules]]
+id = "unprefixed-header-api-key"
+description = "High-entropy unprefixed API key in AppKey, X-Api-Key, or service key assignments/headers"
+regex = '''(?i)\b(?:app[_-]?key|x-api-key|shodan[_-]?api[_-]?key|soar[_-]?api[_-]?key)["']?\s*[:=]\s*["']?([A-Za-z0-9_-]{24,128})["']?'''
+secretGroup = 1
+entropy = 3.5
+keywords = [
+  "appkey",
+  "app_key",
+  "app-key",
+  "x-api-key",
+  "shodan",
+  "soar_api_key",
+  "soar-api-key",
+]
+
+  [rules.allowlist]
+  description = "Ignore explicit uppercase synthetic test placeholders"
+  regexTarget = "secret"
+  regexes = [
+    '''^SYNTHETIC_TEST_[A-Z0-9_]{1,64}$''',
+    '''^REDACTED$''',
+    '''^EXAMPLE_[A-Z0-9_]{1,32}$''',
+    '''^DUMMY_[A-Z0-9_]{1,32}$''',
+  ]
+
+[[rules]]
+id = "internal-corporate-hostname"
+description = "Internal corporate (.corp.*, .internal, .localdomain) hostname in source or lockfiles"
+regex = '''(?i)\b((?:[a-z0-9-]+\.)+(?:corp\.[a-z0-9.-]*[a-z]{2,}|internal|localdomain))\b'''
+secretGroup = 1
+keywords = [
+  ".corp.",
+  ".internal",
+  ".localdomain",
+]
+
+  [rules.allowlist]
+  description = "Ignore baseline config/tests and standard container host.docker.internal"
+  regexTarget = "line"
+  regexes = [
+    '''(?i)\bhost\.(?:docker|containers)\.internal\b''',
+    '''(?i)\bmetadata\.google\.internal\b''',
+  ]
+  paths = [
+    '''(^|/)\.gitleaks\.toml$''',
+    '''(^|/)tests/test_guardrails\.py$''',
+  ]
+
+# Intentionally NO global path exclusions for tests/, spec/, fixtures/, docs/, or lockfiles
+# (uv.lock, poetry.lock, Cargo.lock, package-lock.json, pnpm-lock.yaml):
+# 1. Unit test fixtures copied from live runtime logs are a primary AI agent leak vector.
+# 2. Lockfiles generated on developer workstations can embed private mirror URLs or basic-auth tokens.
