@@ -114,15 +114,24 @@ jobs:
           rm -f /tmp/gitleaks.tar.gz /tmp/gitleaks
           gitleaks version
 
-      - name: Scan full git history and working tree (including tests/)
+      - name: Compose effective config and scan git history + working tree
+        env:
+          IS_BASELINE_REPO: ${{ steps.baseline_meta.outputs.repository == github.repository && 'true' || 'false' }}
         run: |
           set -euo pipefail
-          if [ -f repo/.gitleaks.toml ]; then
-            CONFIG_PATH="repo/.gitleaks.toml"
+          if [[ "$IS_BASELINE_REPO" == "true" ]]; then
+            EFFECTIVE_CONFIG="repo/.gitleaks.toml"
           else
-            CONFIG_PATH="baseline/.gitleaks.toml"
+            CALLER_ARGS=()
+            if [[ -f repo/.gitleaks.toml ]]; then
+              CALLER_ARGS=(--caller repo/.gitleaks.toml)
+            fi
+            EFFECTIVE_CONFIG="$(python3 baseline/scripts/prepare_gitleaks_config.py \
+              --baseline baseline/.gitleaks.toml \
+              "${CALLER_ARGS[@]}" \
+              --output /tmp/effective-gitleaks.toml)"
           fi
-          echo "Using gitleaks config: ${CONFIG_PATH}"
+          echo "Using composed gitleaks config: ${EFFECTIVE_CONFIG}"
 
           IGNORE_ARGS=()
           if [[ -f repo/.gitleaksignore ]]; then
@@ -130,7 +139,7 @@ jobs:
           fi
 
           gitleaks git repo \
-            --config "${CONFIG_PATH}" \
+            --config "$EFFECTIVE_CONFIG" \
             "${IGNORE_ARGS[@]}" \
             --redact=100 \
             --no-banner \
@@ -138,7 +147,7 @@ jobs:
             --exit-code 1
 
           gitleaks dir repo \
-            --config "${CONFIG_PATH}" \
+            --config "$EFFECTIVE_CONFIG" \
             "${IGNORE_ARGS[@]}" \
             --redact=100 \
             --no-banner \
