@@ -13,7 +13,7 @@ body:
     id: context
     attributes:
       label: Context
-      description: "Security rationale, false-positive analysis, execution time impact across caller repositories, and affected files (`.gitleaks.toml`, `security.yml`)."
+      description: "Security rationale, false-positive analysis, execution time impact across caller repositories, and affected files (`.gitleaks.toml`, `security.yml`, `scripts/`)."
     validations:
       required: true
   - type: textarea
@@ -22,7 +22,8 @@ body:
       label: Definition of Done
       description: Concrete deliverables, invariants, and verification criteria required to close this issue.
       value: |
-        - [ ] Rule or scanner change tested against synthetic fixtures with zero false negatives
+        - [ ] Rule or scanner change tested in `tests/test_guardrails.py` against synthetic fixtures with zero false negatives
+        - [ ] All downloaded binaries and actions verified by SHA-256 or 40-char commit SHA
         - [ ] End-to-end reusable workflow runtime remains fast (<1 min)
         - [ ] Documentation updated in `README.md`
     validations:

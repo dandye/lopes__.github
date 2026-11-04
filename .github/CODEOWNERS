@@ -1,10 +1,12 @@
 # Global default code owners
-* @lopes
+* @dandye
 
-# Reusable Security Workflows & Gitleaks Baseline
-/.github/workflows/ @lopes
-/.gitleaks.toml @lopes
+# Reusable Security Workflows, Scripts & Gitleaks Baseline
+/.github/workflows/ @dandye
+/scripts/ @dandye
+/tests/ @dandye
+/.gitleaks.toml @dandye
 
-# Account-Wide Security Policy & Documentation
-/SECURITY.md @lopes
-/README.md @lopes
+# Security Policy & Documentation
+/SECURITY.md @dandye
+/README.md @dandye

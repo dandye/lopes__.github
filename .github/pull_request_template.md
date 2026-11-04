@@ -6,12 +6,13 @@
 
 ## Type of Change
 - [ ] Reusable Security Workflow (`.github/workflows/security.yml`)
-- [ ] Canonical Gitleaks Ruleset (`.gitleaks.toml`)
-- [ ] Account-Wide Security Policy (`SECURITY.md`)
-- [ ] Documentation & Governance (`README.md`, `.github/`)
+- [ ] Canonical Gitleaks Ruleset & Merger (`.gitleaks.toml`, `scripts/prepare_gitleaks_config.py`)
+- [ ] Local Fleet Scanner (`scripts/scan_secrets.sh`)
+- [ ] Security Policy & Documentation (`SECURITY.md`, `README.md`, `.github/`)
 
-## Quality Checklist
-- [ ] Reusable workflow (`security.yml`) passes on this PR (`gitleaks`, `opengrep`, `trivy`).
-- [ ] Scanner versions and action tags are explicitly pinned.
-- [ ] Downstream impact across caller repositories (`lopes/*`) reviewed.
-- [ ] Commit follows [Scoped Commits](https://scopedcommits.com/) convention (`<scope>: <description>`).
+## Security & Quality Checklist
+- [ ] Reusable workflow (`security.yml`) and `python3 tests/test_guardrails.py` pass on this PR.
+- [ ] All GitHub Actions are pinned to 40-character commit SHAs with `persist-credentials: false`.
+- [ ] All downloaded scanner binaries are pinned by exact version and verified via SHA-256 (plus Sigstore Cosign where supported).
+- [ ] Zero `${{ ... }}` template expressions appear directly inside `run:` shell scripts.
+- [ ] Downstream impact across caller repositories (`dandye/*`) reviewed.
