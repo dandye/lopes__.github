@@ -35,17 +35,45 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Resolve immutable baseline repository and ref
+        id: baseline_meta
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          CURRENT_REPO: ${{ github.repository }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          wf_ref = os.environ.get("WORKFLOW_REF", "")
+          # Format: owner/repo/.github/workflows/security.yml@<ref>
+          m = re.match(r"^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/\.github/workflows/[^@]+@(.+)$", wf_ref)
+          if m and m.group(1) != os.environ["CURRENT_REPO"]:
+              repo, ref = m.group(1), m.group(2)
+          else:
+              repo, ref = os.environ["CURRENT_REPO"], os.environ["CURRENT_SHA"]
+          if not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo):
+              raise SystemExit(f"Invalid baseline repository: {repo!r}")
+          if not re.match(r"^[A-Za-z0-9_./-]+$", ref):
+              raise SystemExit(f"Invalid baseline ref: {ref!r}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"repository={repo}\n")
+              out.write(f"ref={ref}\n")
+          PY
+
       - name: Checkout repository (full git history, no persisted credentials)
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
           path: repo
 
-      - name: Checkout shared security baseline
-        uses: actions/checkout@v6
+      - name: Checkout canonical security baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: lopes/.github
+          repository: ${{ steps.baseline_meta.outputs.repository }}
+          ref: ${{ steps.baseline_meta.outputs.ref }}
+          fetch-depth: 1
           persist-credentials: false
           path: baseline
 
@@ -96,17 +124,45 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Resolve immutable baseline repository and ref
+        id: baseline_meta
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          CURRENT_REPO: ${{ github.repository }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          wf_ref = os.environ.get("WORKFLOW_REF", "")
+          # Format: owner/repo/.github/workflows/security.yml@<ref>
+          m = re.match(r"^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/\.github/workflows/[^@]+@(.+)$", wf_ref)
+          if m and m.group(1) != os.environ["CURRENT_REPO"]:
+              repo, ref = m.group(1), m.group(2)
+          else:
+              repo, ref = os.environ["CURRENT_REPO"], os.environ["CURRENT_SHA"]
+          if not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo):
+              raise SystemExit(f"Invalid baseline repository: {repo!r}")
+          if not re.match(r"^[A-Za-z0-9_./-]+$", ref):
+              raise SystemExit(f"Invalid baseline ref: {ref!r}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"repository={repo}\n")
+              out.write(f"ref={ref}\n")
+          PY
+
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
           path: repo
 
-      - name: Checkout shared security baseline
-        uses: actions/checkout@v6
+      - name: Checkout canonical security baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: lopes/.github
+          repository: ${{ steps.baseline_meta.outputs.repository }}
+          ref: ${{ steps.baseline_meta.outputs.ref }}
+          fetch-depth: 1
           persist-credentials: false
           path: baseline
 
@@ -182,7 +238,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
