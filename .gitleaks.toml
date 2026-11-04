@@ -49,6 +49,72 @@ keywords = [
     '''^YOUR_[A-Z0-9_]{1,32}_HERE$''',
   ]
 
+[[rules]]
+id = "authenticated-url-credentials"
+description = "Embedded basic-auth or token credentials in HTTP/Git/SSH URLs or lockfiles"
+regex = '''(?i)\b(?:https?|git|ssh)://[^/\s:@"'<>{}]{1,64}:([^/\s@"'<>{}]{8,256})@[A-Za-z0-9.-]+'''
+secretGroup = 1
+entropy = 2.8
+keywords = [
+  "://",
+]
+
+  [rules.allowlist]
+  description = "Ignore RFC 2606 documentation placeholders and explicit REDACTED literals"
+  regexTarget = "line"
+  regexes = [
+    '''(?i)://(?:user|username|example|placeholder):(?:pass|password|REDACTED|SYNTHETIC_TEST_[A-Z0-9_]+)@(?:[a-z0-9-]+\.)*example\.(?:com|org|net)\b''',
+  ]
+
+[[rules]]
+id = "unprefixed-header-api-key"
+description = "High-entropy unprefixed API key in AppKey, X-Api-Key, or service key assignments/headers"
+regex = '''(?i)\b(?:app[_-]?key|x-api-key|shodan[_-]?api[_-]?key|soar[_-]?api[_-]?key)["']?\s*[:=]\s*["']?([A-Za-z0-9_-]{24,128})["']?'''
+secretGroup = 1
+entropy = 3.5
+keywords = [
+  "appkey",
+  "app_key",
+  "app-key",
+  "x-api-key",
+  "shodan",
+  "soar_api_key",
+  "soar-api-key",
+]
+
+  [rules.allowlist]
+  description = "Ignore explicit uppercase synthetic test placeholders"
+  regexTarget = "secret"
+  regexes = [
+    '''^SYNTHETIC_TEST_[A-Z0-9_]{1,64}$''',
+    '''^REDACTED$''',
+    '''^EXAMPLE_[A-Z0-9_]{1,32}$''',
+    '''^DUMMY_[A-Z0-9_]{1,32}$''',
+  ]
+
+[[rules]]
+id = "internal-corporate-hostname"
+description = "Internal corporate (.corp.*, .internal, .localdomain) hostname in source or lockfiles"
+regex = '''(?i)\b((?:[a-z0-9-]+\.)+(?:corp\.[a-z0-9.-]*[a-z]{2,}|internal|localdomain))\b'''
+secretGroup = 1
+keywords = [
+  ".corp.",
+  ".internal",
+  ".localdomain",
+]
+
+  [rules.allowlist]
+  description = "Ignore baseline config/tests and standard container host.docker.internal"
+  regexTarget = "line"
+  regexes = [
+    '''(?i)\bhost\.(?:docker|containers)\.internal\b''',
+    '''(?i)\bmetadata\.google\.internal\b''',
+  ]
+  paths = [
+    '''(^|/)\.gitleaks\.toml$''',
+    '''(^|/)tests/test_guardrails\.py$''',
+  ]
+
 # Intentionally NO global path exclusions for tests/, spec/, fixtures/, docs/, or lockfiles
 # (uv.lock, poetry.lock, Cargo.lock, package-lock.json, pnpm-lock.yaml):
 # 1. Unit test fixtures copied from live runtime logs are a primary AI agent leak vector.

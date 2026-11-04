@@ -24,6 +24,9 @@ FORBIDDEN_PATH_PATTERNS = re.compile(
 )
 PROTECTED_RULE_IDS = frozenset({
     "url-query-or-fragment-secret",
+    "authenticated-url-credentials",
+    "unprefixed-header-api-key",
+    "internal-corporate-hostname",
 })
 EXTEND_SECTION_RE = re.compile(
     r"(?ms)^\[extend\]\s*\n(?:(?!\[)[^\n]*\n?)*"
