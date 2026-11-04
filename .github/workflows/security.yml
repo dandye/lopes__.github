@@ -153,6 +153,12 @@ jobs:
             --no-banner \
             --exit-code 1
 
+      - name: Run baseline guardrail self-tests (on baseline repository changes)
+        if: ${{ steps.baseline_meta.outputs.repository == github.repository }}
+        run: |
+          set -euo pipefail
+          python3 repo/tests/test_guardrails.py --gitleaks-bin /usr/local/bin/gitleaks
+
   opengrep:
     name: SAST (opengrep multi-language, redacted logs)
     runs-on: ubuntu-latest

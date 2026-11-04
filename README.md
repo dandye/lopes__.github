@@ -5,10 +5,17 @@ Shared GitHub Actions reusable security workflows, canonical `.gitleaks.toml` ba
 ## What Lives Here
 
 - **[`.github/workflows/security.yml`](.github/workflows/security.yml)** — Reusable workflow (`workflow_call`) executing three open-source deterministic checks across all repository paths (including `tests/`):
-  1. **`gitleaks`** (`v8.30.1`, SHA-256 verified) — Scans both full git commit history (`fetch-depth: 0`) and the working tree with `--redact=100`. Uses the caller repository's `.gitleaks.toml` if present, or falls back to this repository's canonical [`.gitleaks.toml`](.gitleaks.toml).
+  1. **`gitleaks`** (`v8.30.1`, SHA-256 verified) — Scans both full git commit history (`fetch-depth: 0`) and the working tree with `--redact=100`. Composes any caller `.gitleaks.toml` on top of this repository's canonical [`.gitleaks.toml`](.gitleaks.toml) via [`scripts/prepare_gitleaks_config.py`](scripts/prepare_gitleaks_config.py) so caller allowlists never drop baseline rules and cannot exclude `tests/` or lockfiles.
   2. **`opengrep`** (`v1.33.1`, SHA-256 + Sigstore Cosign verified) — Multi-language static analysis (`python`, `bash`, `rust`, `go`, `typescript`, `javascript`, `dockerfile`, `terraform` including AWS/GCP/Azure, `yaml/github-actions`) at `ERROR` severity, pinned to an immutable `semgrep-rules` commit. Findings are rendered by [`scripts/format_opengrep_findings.py`](scripts/format_opengrep_findings.py) so matched source lines are never echoed into Actions logs.
   3. **`trivy`** (`v0.76.1`, SHA-256 verified standalone binary) — Filesystem dependency vulnerability (`CRITICAL,HIGH`, including unfixed CVEs unless `trivy_ignore_unfixed: true`) and IaC misconfiguration scan (Terraform, Ansible, Dockerfiles, GitHub Actions, and lockfiles).
-- **[`.gitleaks.toml`](.gitleaks.toml)** — Canonical secret-scanning ruleset extending Gitleaks defaults with explicit URL query-parameter credential detection (`?key=`, `?api_key=`, `?token=`, `?access_token=`, `?license_key=`) and zero `tests/` exclusions.
+- **[`.gitleaks.toml`](.gitleaks.toml)** — Canonical secret-scanning ruleset extending Gitleaks defaults with zero `tests/` or lockfile exclusions and these rules:
+  - `url-query-or-fragment-secret`: URL query (`?key=`, `&token=`, `&sig=`) and OAuth fragment (`#access_token=`, `#id_token=`) credentials, including percent-encoded (`%2B`, `%2F`, `%3D`) and Base64 (`+`, `/`, `=`) characters.
+  - `authenticated-url-credentials`: Basic-auth or token credentials embedded in HTTP/Git/SSH URLs or lockfiles (`uv.lock`, `poetry.lock`, `.npmrc`).
+  - `unprefixed-header-api-key`: High-entropy unprefixed keys assigned to `AppKey`, `X-Api-Key`, `shodan_api_key`, or `soar_api_key`.
+  - `internal-corporate-hostname`: Non-public `.corp.*`, `.internal`, and `.localdomain` hostnames.
+- **[`scripts/prepare_gitleaks_config.py`](scripts/prepare_gitleaks_config.py)** — Composes a caller repository's `.gitleaks.toml` on top of this baseline via `[extend]` and rejects configs that disable baseline rules or exclude `tests/` or lockfiles.
+- **[`scripts/scan_secrets.sh`](scripts/scan_secrets.sh)** — Offline local secret scanner that bootstraps a SHA-256-verified `gitleaks` binary into `~/.cache/security-guardrails/` and scans either a single repository or an entire directory fleet (`--fleet`) with `--redact=100`.
+- **[`tests/test_guardrails.py`](tests/test_guardrails.py)** — Self-test suite verifying secret detection rules, allowlist boundaries, two-level config composition, CI log redaction, and workflow supply-chain invariants.
 - **[`SECURITY.md`](SECURITY.md)** — Account-wide default vulnerability disclosure policy inherited automatically by all public repositories under `github.com/lopes` unless overridden locally.
 
 > [!IMPORTANT]
@@ -47,4 +54,29 @@ jobs:
     permissions:
       contents: read
     uses: lopes/.github/.github/workflows/security.yml@<40-char-commit-sha>
+```
+
+## Local Secret Scanning Usage
+
+Scan a single repository or worktree (full git history plus untracked and unstaged working-tree files):
+
+```bash
+TARGET_REPO="$HOME/Projects/my_project"
+./scripts/scan_secrets.sh "$TARGET_REPO"
+```
+
+Scan an entire directory of repositories and linked worktrees offline:
+
+```bash
+PROJECTS_DIR="$HOME/Projects"
+./scripts/scan_secrets.sh --fleet "$PROJECTS_DIR"
+```
+
+Optional workstation-local rules (kept outside public repositories) can be placed in `${XDG_CONFIG_HOME:-$HOME/.config}/security-guardrails/local.toml` and are layered onto `.gitleaks.toml` automatically.
+
+## Running the Self-Test Suite
+
+```bash
+GITLEAKS_BIN="$HOME/.cache/security-guardrails/gitleaks-8.30.1/gitleaks"
+python3 tests/test_guardrails.py --gitleaks-bin "$GITLEAKS_BIN"
 ```
