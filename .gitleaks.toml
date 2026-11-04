@@ -32,10 +32,7 @@ keywords = [
     '''(?i)^test-only-[a-z0-9-]+$''',
   ]
 
-# Intentionally NO path exclusions for tests/, spec/, fixtures/, or docs/:
-# unit test fixtures pasted from real runtime logs are a primary secret leak vector.
-[allowlist]
-description = "Global baseline allowlist (only non-secret lock/binary artifacts)"
-paths = [
-  '''(^|/)(?:uv\.lock|Cargo\.lock|poetry\.lock|package-lock\.json|pnpm-lock\.yaml)$''',
-]
+# Intentionally NO global path exclusions for tests/, spec/, fixtures/, docs/, or lockfiles
+# (uv.lock, poetry.lock, Cargo.lock, package-lock.json, pnpm-lock.yaml):
+# 1. Unit test fixtures copied from live runtime logs are a primary AI agent leak vector.
+# 2. Lockfiles generated on developer workstations can embed private mirror URLs or basic-auth tokens.
