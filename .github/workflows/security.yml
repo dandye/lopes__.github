@@ -65,10 +65,29 @@ jobs:
             CONFIG_PATH="baseline/.gitleaks.toml"
           fi
           echo "Using gitleaks config: ${CONFIG_PATH}"
-          gitleaks git repo --config "${CONFIG_PATH}" --redact --verbose --exit-code 1
+
+          IGNORE_ARGS=()
+          if [[ -f repo/.gitleaksignore ]]; then
+            IGNORE_ARGS=(--gitleaks-ignore-path repo/.gitleaksignore)
+          fi
+
+          gitleaks git repo \
+            --config "${CONFIG_PATH}" \
+            "${IGNORE_ARGS[@]}" \
+            --redact=100 \
+            --no-banner \
+            --verbose \
+            --exit-code 1
+
+          gitleaks dir repo \
+            --config "${CONFIG_PATH}" \
+            "${IGNORE_ARGS[@]}" \
+            --redact=100 \
+            --no-banner \
+            --exit-code 1
 
   opengrep:
-    name: SAST (opengrep multi-language)
+    name: SAST (opengrep multi-language, redacted logs)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -77,6 +96,12 @@ jobs:
         with:
           fetch-depth: 1
           path: repo
+
+      - name: Checkout shared security baseline
+        uses: actions/checkout@v6
+        with:
+          repository: lopes/.github
+          path: baseline
 
       - name: Install opengrep static binary
         run: |
@@ -94,30 +119,53 @@ jobs:
             bash/lang/security \
             rust/lang/security \
             terraform/lang/security \
-            yaml/github-actions/security \
-            generic/secrets
+            yaml/github-actions/security
           find /tmp/opengrep-rules -type f \( -name '*.test.yaml' -o -name '*.test.yml' -o ! -name '*.yaml' -a ! -name '*.yml' \) -delete
 
-      - name: Run opengrep SAST (including tests/)
+      - name: Run opengrep SAST (snippet-redacted output, including tests/)
         working-directory: repo
         run: |
           set -euo pipefail
+          # Opengrep ships a compiled-in default .semgrepignore that skips
+          # tests/ even when the repository has no .semgrepignore file.
+          # Provide an explicit ignore list so tests/ is actually scanned.
+          cat > /tmp/opengrep.ignore <<'EOF'
+          .git/
+          node_modules/
+          .venv/
+          venv/
+          target/
+          __pycache__/
+          EOF
+
+          set +e
           opengrep scan \
+            --experimental \
+            --semgrepignore-filename /tmp/opengrep.ignore \
             --config /tmp/opengrep-rules/python/lang/security \
             --config /tmp/opengrep-rules/bash/lang/security \
             --config /tmp/opengrep-rules/rust/lang/security \
             --config /tmp/opengrep-rules/terraform/lang/security \
             --config /tmp/opengrep-rules/yaml/github-actions/security \
-            --config /tmp/opengrep-rules/generic/secrets \
             --severity ERROR \
             --error \
-            --exclude=".git" \
-            --exclude="node_modules" \
-            --exclude=".venv" \
-            --exclude="venv" \
-            --exclude="target" \
-            --exclude="__pycache__" \
-            .
+            --json \
+            . > /tmp/opengrep-results.json
+          SCAN_RC=$?
+          set -e
+
+          # Prefer the baseline's formatter; fall back to the repository's own copy
+          # until this script has landed on the baseline's default branch.
+          FORMATTER="../baseline/scripts/format_opengrep_findings.py"
+          if [[ ! -f "$FORMATTER" && -f scripts/format_opengrep_findings.py ]]; then
+            FORMATTER="scripts/format_opengrep_findings.py"
+          fi
+          python3 "$FORMATTER" /tmp/opengrep-results.json
+          FORMAT_RC=$?
+          rm -f /tmp/opengrep-results.json
+          if [[ "$SCAN_RC" -ne 0 || "$FORMAT_RC" -ne 0 ]]; then
+            exit 1
+          fi
 
   trivy:
     name: IaC & Supply Chain (trivy)
