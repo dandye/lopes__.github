@@ -213,16 +213,35 @@ jobs:
           rm -f /tmp/opengrep /tmp/opengrep.cert /tmp/opengrep.sig
           opengrep --version
 
-      - name: Fetch open-source community rule packs
+      - name: Fetch SHA-pinned community SAST rule packs
+        env:
+          SEMGREP_RULES_SHA: "16b9e6d45f10649f6a531ec4838ed9924372c3bc"
         run: |
           set -euo pipefail
-          git clone --depth 1 --filter=blob:none --sparse https://github.com/semgrep/semgrep-rules.git /tmp/opengrep-rules
+          mkdir -p /tmp/opengrep-rules
+          git -C /tmp/opengrep-rules init -q
+          git -C /tmp/opengrep-rules remote add origin https://github.com/semgrep/semgrep-rules.git
+          git -C /tmp/opengrep-rules sparse-checkout init --cone
           git -C /tmp/opengrep-rules sparse-checkout set \
             python/lang/security \
             bash/lang/security \
             rust/lang/security \
+            go/lang/security \
+            typescript/lang/security \
+            javascript/lang/security \
+            dockerfile/security \
             terraform/lang/security \
+            terraform/gcp/security \
+            terraform/aws/security \
+            terraform/azure/security \
             yaml/github-actions/security
+          git -C /tmp/opengrep-rules fetch --depth 1 --filter=blob:none origin "$SEMGREP_RULES_SHA"
+          git -C /tmp/opengrep-rules checkout -q FETCH_HEAD
+          ACTUAL_SHA="$(git -C /tmp/opengrep-rules rev-parse HEAD)"
+          if [[ "$ACTUAL_SHA" != "$SEMGREP_RULES_SHA" ]]; then
+            echo "ERROR: semgrep-rules SHA mismatch: ${ACTUAL_SHA}" >&2
+            exit 1
+          fi
           find /tmp/opengrep-rules -type f \( -name '*.test.yaml' -o -name '*.test.yml' -o ! -name '*.yaml' -a ! -name '*.yml' \) -delete
 
       - name: Run opengrep SAST (snippet-redacted output, including tests/)
@@ -248,7 +267,14 @@ jobs:
             --config /tmp/opengrep-rules/python/lang/security \
             --config /tmp/opengrep-rules/bash/lang/security \
             --config /tmp/opengrep-rules/rust/lang/security \
+            --config /tmp/opengrep-rules/go/lang/security \
+            --config /tmp/opengrep-rules/typescript/lang/security \
+            --config /tmp/opengrep-rules/javascript/lang/security \
+            --config /tmp/opengrep-rules/dockerfile/security \
             --config /tmp/opengrep-rules/terraform/lang/security \
+            --config /tmp/opengrep-rules/terraform/gcp/security \
+            --config /tmp/opengrep-rules/terraform/aws/security \
+            --config /tmp/opengrep-rules/terraform/azure/security \
             --config /tmp/opengrep-rules/yaml/github-actions/security \
             --severity ERROR \
             --error \
