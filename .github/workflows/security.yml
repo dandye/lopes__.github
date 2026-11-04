@@ -20,9 +20,8 @@ on:
   schedule:
     - cron: "17 4 * * 1"  # Weekly Monday 04:17 UTC
 
-permissions:
-  contents: read
-  security-events: write
+# Default deny-all GITHUB_TOKEN permissions; each job grants only contents: read.
+permissions: {}
 
 concurrency:
   group: security-${{ github.repository }}-${{ github.workflow }}-${{ github.ref }}
@@ -30,20 +29,24 @@ concurrency:
 
 jobs:
   gitleaks:
-    name: Secrets (gitleaks full history)
+    name: Secrets (gitleaks full history + working tree)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - name: Checkout repository (full git history)
+      - name: Checkout repository (full git history, no persisted credentials)
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
           path: repo
 
       - name: Checkout shared security baseline
         uses: actions/checkout@v6
         with:
           repository: lopes/.github
+          persist-credentials: false
           path: baseline
 
       - name: Install pinned gitleaks
@@ -90,17 +93,21 @@ jobs:
     name: SAST (opengrep multi-language, redacted logs)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+          persist-credentials: false
           path: repo
 
       - name: Checkout shared security baseline
         uses: actions/checkout@v6
         with:
           repository: lopes/.github
+          persist-credentials: false
           path: baseline
 
       - name: Install opengrep static binary
@@ -171,11 +178,14 @@ jobs:
     name: IaC & Supply Chain (trivy)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Run Trivy filesystem vulnerability and misconfiguration scan
         uses: aquasecurity/trivy-action@0.35.0
