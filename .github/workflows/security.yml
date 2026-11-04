@@ -5,24 +5,33 @@ on:
   workflow_call:
     inputs:
       gitleaks_version:
-        description: "Pinned gitleaks release version"
+        description: "Pinned gitleaks release version (requires matching gitleaks_sha256 if overridden)"
         required: false
         type: string
         default: "8.30.1"
+      gitleaks_sha256:
+        description: "Expected SHA-256 hex digest for gitleaks_<version>_linux_x64.tar.gz"
+        required: false
+        type: string
+        default: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
       trivy_severity:
-        description: "Trivy severity threshold for failing builds"
+        description: "Comma-separated Trivy severity threshold"
         required: false
         type: string
         default: "CRITICAL,HIGH"
+      trivy_ignore_unfixed:
+        description: "Whether Trivy ignores vulnerabilities without an upstream fix version"
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [main]
   pull_request:
   schedule:
     - cron: "17 4 * * 1"  # Weekly Monday 04:17 UTC
 
-permissions:
-  contents: read
-  security-events: write
+# Default deny-all GITHUB_TOKEN permissions; each job grants only contents: read.
+permissions: {}
 
 concurrency:
   group: security-${{ github.repository }}-${{ github.workflow }}-${{ github.ref }}
@@ -30,30 +39,79 @@ concurrency:
 
 jobs:
   gitleaks:
-    name: Secrets (gitleaks full history)
+    name: Secrets (gitleaks full history + working tree)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - name: Checkout repository (full git history)
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          path: repo
-
-      - name: Checkout shared security baseline
-        uses: actions/checkout@v6
-        with:
-          repository: lopes/.github
-          path: baseline
-
-      - name: Install pinned gitleaks
+      - name: Resolve immutable baseline repository and ref
+        id: baseline_meta
         env:
-          GITLEAKS_VERSION: ${{ inputs.gitleaks_version || '8.30.1' }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          CURRENT_REPO: ${{ github.repository }}
+          CURRENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
-          tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
-          chmod +x /usr/local/bin/gitleaks
+          python3 - <<'PY'
+          import os, re
+          wf_ref = os.environ.get("WORKFLOW_REF", "")
+          # Format: owner/repo/.github/workflows/security.yml@<ref>
+          m = re.match(r"^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/\.github/workflows/[^@]+@(.+)$", wf_ref)
+          if m and m.group(1) != os.environ["CURRENT_REPO"]:
+              repo, ref = m.group(1), m.group(2)
+          else:
+              repo, ref = os.environ["CURRENT_REPO"], os.environ["CURRENT_SHA"]
+          if not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo):
+              raise SystemExit(f"Invalid baseline repository: {repo!r}")
+          if not re.match(r"^[A-Za-z0-9_./-]+$", ref):
+              raise SystemExit(f"Invalid baseline ref: {ref!r}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"repository={repo}\n")
+              out.write(f"ref={ref}\n")
+          PY
+
+      - name: Checkout repository (full git history, no persisted credentials)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: repo
+
+      - name: Checkout canonical security baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.baseline_meta.outputs.repository }}
+          ref: ${{ steps.baseline_meta.outputs.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: baseline
+
+      - name: Install SHA256-verified gitleaks
+        env:
+          GITLEAKS_VERSION: ${{ inputs.gitleaks_version || '8.30.1' }}
+          GITLEAKS_SHA256: ${{ inputs.gitleaks_sha256 || '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb' }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITLEAKS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Invalid gitleaks_version format: ${GITLEAKS_VERSION}" >&2
+            exit 1
+          fi
+          if [[ ! "$GITLEAKS_SHA256" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "ERROR: Invalid gitleaks_sha256 digest: ${GITLEAKS_SHA256}" >&2
+            exit 1
+          fi
+          if [[ "$GITLEAKS_VERSION" != "8.30.1" && "$GITLEAKS_SHA256" == "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb" ]]; then
+            echo "ERROR: Overriding gitleaks_version requires providing the matching gitleaks_sha256." >&2
+            exit 1
+          fi
+
+          ARCHIVE_URL="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL "$ARCHIVE_URL" -o /tmp/gitleaks.tar.gz
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          rm -f /tmp/gitleaks.tar.gz /tmp/gitleaks
           gitleaks version
 
       - name: Scan full git history and working tree (including tests/)
@@ -90,36 +148,105 @@ jobs:
     name: SAST (opengrep multi-language, redacted logs)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
+      - name: Resolve immutable baseline repository and ref
+        id: baseline_meta
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          CURRENT_REPO: ${{ github.repository }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          wf_ref = os.environ.get("WORKFLOW_REF", "")
+          # Format: owner/repo/.github/workflows/security.yml@<ref>
+          m = re.match(r"^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/\.github/workflows/[^@]+@(.+)$", wf_ref)
+          if m and m.group(1) != os.environ["CURRENT_REPO"]:
+              repo, ref = m.group(1), m.group(2)
+          else:
+              repo, ref = os.environ["CURRENT_REPO"], os.environ["CURRENT_SHA"]
+          if not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo):
+              raise SystemExit(f"Invalid baseline repository: {repo!r}")
+          if not re.match(r"^[A-Za-z0-9_./-]+$", ref):
+              raise SystemExit(f"Invalid baseline ref: {ref!r}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"repository={repo}\n")
+              out.write(f"ref={ref}\n")
+          PY
+
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
           path: repo
 
-      - name: Checkout shared security baseline
-        uses: actions/checkout@v6
+      - name: Checkout canonical security baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: lopes/.github
+          repository: ${{ steps.baseline_meta.outputs.repository }}
+          ref: ${{ steps.baseline_meta.outputs.ref }}
+          fetch-depth: 1
+          persist-credentials: false
           path: baseline
 
-      - name: Install opengrep static binary
+      - name: Install SHA256- and Cosign-verified opengrep
+        env:
+          OPENGREP_VERSION: "v1.33.1"
+          OPENGREP_SHA256: "46e8133cc490f9f50518061590ce2f6be5a08afaeda034471c0ceda4b3899808"
         run: |
           set -euo pipefail
-          curl -fsSL "https://github.com/opengrep/opengrep/releases/latest/download/opengrep_manylinux_x86" -o /usr/local/bin/opengrep
-          chmod +x /usr/local/bin/opengrep
+          BASE_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}"
+          curl --proto '=https' --tlsv1.2 -fsSL "${BASE_URL}/opengrep_manylinux_x86" -o /tmp/opengrep
+          curl --proto '=https' --tlsv1.2 -fsSL "${BASE_URL}/opengrep_manylinux_x86.cert" -o /tmp/opengrep.cert
+          curl --proto '=https' --tlsv1.2 -fsSL "${BASE_URL}/opengrep_manylinux_x86.sig" -o /tmp/opengrep.sig
+
+          echo "${OPENGREP_SHA256}  /tmp/opengrep" | sha256sum -c -
+
+          if command -v cosign >/dev/null 2>&1; then
+            cosign verify-blob /tmp/opengrep \
+              --certificate /tmp/opengrep.cert \
+              --signature /tmp/opengrep.sig \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-identity-regexp "^https://github\.com/opengrep/opengrep/\.github/workflows/.*@refs/heads/release-${OPENGREP_VERSION}$"
+          fi
+
+          sudo install -m 0755 /tmp/opengrep /usr/local/bin/opengrep
+          rm -f /tmp/opengrep /tmp/opengrep.cert /tmp/opengrep.sig
           opengrep --version
 
-      - name: Fetch open-source community rule packs
+      - name: Fetch SHA-pinned community SAST rule packs
+        env:
+          SEMGREP_RULES_SHA: "16b9e6d45f10649f6a531ec4838ed9924372c3bc"
         run: |
           set -euo pipefail
-          git clone --depth 1 --filter=blob:none --sparse https://github.com/semgrep/semgrep-rules.git /tmp/opengrep-rules
+          mkdir -p /tmp/opengrep-rules
+          git -C /tmp/opengrep-rules init -q
+          git -C /tmp/opengrep-rules remote add origin https://github.com/semgrep/semgrep-rules.git
+          git -C /tmp/opengrep-rules sparse-checkout init --cone
           git -C /tmp/opengrep-rules sparse-checkout set \
             python/lang/security \
             bash/lang/security \
             rust/lang/security \
+            go/lang/security \
+            typescript/lang/security \
+            javascript/lang/security \
+            dockerfile/security \
             terraform/lang/security \
+            terraform/gcp/security \
+            terraform/aws/security \
+            terraform/azure/security \
             yaml/github-actions/security
+          git -C /tmp/opengrep-rules fetch --depth 1 --filter=blob:none origin "$SEMGREP_RULES_SHA"
+          git -C /tmp/opengrep-rules checkout -q FETCH_HEAD
+          ACTUAL_SHA="$(git -C /tmp/opengrep-rules rev-parse HEAD)"
+          if [[ "$ACTUAL_SHA" != "$SEMGREP_RULES_SHA" ]]; then
+            echo "ERROR: semgrep-rules SHA mismatch: ${ACTUAL_SHA}" >&2
+            exit 1
+          fi
           find /tmp/opengrep-rules -type f \( -name '*.test.yaml' -o -name '*.test.yml' -o ! -name '*.yaml' -a ! -name '*.yml' \) -delete
 
       - name: Run opengrep SAST (snippet-redacted output, including tests/)
@@ -145,7 +272,14 @@ jobs:
             --config /tmp/opengrep-rules/python/lang/security \
             --config /tmp/opengrep-rules/bash/lang/security \
             --config /tmp/opengrep-rules/rust/lang/security \
+            --config /tmp/opengrep-rules/go/lang/security \
+            --config /tmp/opengrep-rules/typescript/lang/security \
+            --config /tmp/opengrep-rules/javascript/lang/security \
+            --config /tmp/opengrep-rules/dockerfile/security \
             --config /tmp/opengrep-rules/terraform/lang/security \
+            --config /tmp/opengrep-rules/terraform/gcp/security \
+            --config /tmp/opengrep-rules/terraform/aws/security \
+            --config /tmp/opengrep-rules/terraform/azure/security \
             --config /tmp/opengrep-rules/yaml/github-actions/security \
             --severity ERROR \
             --error \
@@ -168,21 +302,51 @@ jobs:
           fi
 
   trivy:
-    name: IaC & Supply Chain (trivy)
+    name: IaC & Supply Chain (SHA256-verified trivy)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - name: Checkout caller repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
-      - name: Run Trivy filesystem vulnerability and misconfiguration scan
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,misconfig
-          severity: ${{ inputs.trivy_severity || 'CRITICAL,HIGH' }}
-          ignore-unfixed: true
-          exit-code: "1"
+      - name: Install SHA256-verified trivy
+        env:
+          TRIVY_VERSION: "0.76.1"
+          TRIVY_SHA256: "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0"
+        run: |
+          set -euo pipefail
+          TRIVY_URL="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL "$TRIVY_URL" -o /tmp/trivy.tar.gz
+          echo "${TRIVY_SHA256}  /tmp/trivy.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
+          sudo install -m 0755 /tmp/trivy /usr/local/bin/trivy
+          rm -f /tmp/trivy.tar.gz /tmp/trivy
+          trivy --version
+
+      - name: Run Trivy filesystem vulnerability and IaC misconfiguration scan
+        env:
+          TRIVY_SEVERITY_INPUT: ${{ inputs.trivy_severity || 'CRITICAL,HIGH' }}
+          TRIVY_IGNORE_UNFIXED_INPUT: ${{ inputs.trivy_ignore_unfixed && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TRIVY_SEVERITY_INPUT" =~ ^(UNKNOWN|LOW|MEDIUM|HIGH|CRITICAL)(,(UNKNOWN|LOW|MEDIUM|HIGH|CRITICAL))*$ ]]; then
+            echo "ERROR: Invalid trivy_severity value: ${TRIVY_SEVERITY_INPUT}" >&2
+            exit 1
+          fi
+
+          EXTRA_ARGS=()
+          if [[ "$TRIVY_IGNORE_UNFIXED_INPUT" == "true" ]]; then
+            EXTRA_ARGS+=(--ignore-unfixed)
+          fi
+
+          trivy fs \
+            --scanners vuln,misconfig \
+            --severity "$TRIVY_SEVERITY_INPUT" \
+            "${EXTRA_ARGS[@]}" \
+            --exit-code 1 \
+            .
