@@ -65,7 +65,26 @@ jobs:
             CONFIG_PATH="baseline/.gitleaks.toml"
           fi
           echo "Using gitleaks config: ${CONFIG_PATH}"
-          gitleaks git repo --config "${CONFIG_PATH}" --redact --verbose --exit-code 1
+
+          IGNORE_ARGS=()
+          if [[ -f repo/.gitleaksignore ]]; then
+            IGNORE_ARGS=(--gitleaks-ignore-path repo/.gitleaksignore)
+          fi
+
+          gitleaks git repo \
+            --config "${CONFIG_PATH}" \
+            "${IGNORE_ARGS[@]}" \
+            --redact=100 \
+            --no-banner \
+            --verbose \
+            --exit-code 1
+
+          gitleaks dir repo \
+            --config "${CONFIG_PATH}" \
+            "${IGNORE_ARGS[@]}" \
+            --redact=100 \
+            --no-banner \
+            --exit-code 1
 
   opengrep:
     name: SAST (opengrep multi-language, redacted logs)
