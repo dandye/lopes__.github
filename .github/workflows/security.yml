@@ -188,11 +188,29 @@ jobs:
           persist-credentials: false
           path: baseline
 
-      - name: Install opengrep static binary
+      - name: Install SHA256- and Cosign-verified opengrep
+        env:
+          OPENGREP_VERSION: "v1.33.1"
+          OPENGREP_SHA256: "46e8133cc490f9f50518061590ce2f6be5a08afaeda034471c0ceda4b3899808"
         run: |
           set -euo pipefail
-          curl -fsSL "https://github.com/opengrep/opengrep/releases/latest/download/opengrep_manylinux_x86" -o /usr/local/bin/opengrep
-          chmod +x /usr/local/bin/opengrep
+          BASE_URL="https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}"
+          curl --proto '=https' --tlsv1.2 -fsSL "${BASE_URL}/opengrep_manylinux_x86" -o /tmp/opengrep
+          curl --proto '=https' --tlsv1.2 -fsSL "${BASE_URL}/opengrep_manylinux_x86.cert" -o /tmp/opengrep.cert
+          curl --proto '=https' --tlsv1.2 -fsSL "${BASE_URL}/opengrep_manylinux_x86.sig" -o /tmp/opengrep.sig
+
+          echo "${OPENGREP_SHA256}  /tmp/opengrep" | sha256sum -c -
+
+          if command -v cosign >/dev/null 2>&1; then
+            cosign verify-blob /tmp/opengrep \
+              --certificate /tmp/opengrep.cert \
+              --signature /tmp/opengrep.sig \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-identity-regexp "^https://github\.com/opengrep/opengrep/\.github/workflows/.*@refs/heads/release-${OPENGREP_VERSION}$"
+          fi
+
+          sudo install -m 0755 /tmp/opengrep /usr/local/bin/opengrep
+          rm -f /tmp/opengrep /tmp/opengrep.cert /tmp/opengrep.sig
           opengrep --version
 
       - name: Fetch open-source community rule packs
