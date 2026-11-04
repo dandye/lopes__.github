@@ -3,7 +3,7 @@
 
 Guarantees two invariants:
 1. A repository-local `.gitleaks.toml` NEVER silently replaces or disables the
-   canonical baseline rules (`url-query-api-key`, etc.). Instead, its
+   canonical baseline rules (`url-query-or-fragment-secret`, etc.). Instead, its
    `[extend]` header is rewritten to inherit directly from the canonical baseline
    (which in turn sets `useDefault = true` to inherit Gitleaks built-in rules).
 2. Repository-local configs are rejected (fail-closed) if they attempt to weaken
@@ -23,7 +23,7 @@ FORBIDDEN_PATH_PATTERNS = re.compile(
     r"(?i)(?:tests?|specs?|fixtures?|uv\\?\.lock|poetry\\?\.lock|package-lock\\?\.json|pnpm-lock\\?\.yaml|Cargo\\?\.lock)"
 )
 PROTECTED_RULE_IDS = frozenset({
-    "url-query-api-key",
+    "url-query-or-fragment-secret",
 })
 EXTEND_SECTION_RE = re.compile(
     r"(?ms)^\[extend\]\s*\n(?:(?!\[)[^\n]*\n?)*"

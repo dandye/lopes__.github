@@ -15,20 +15,27 @@ regexes = [
 ]
 
 [[rules]]
-id = "url-query-api-key"
-description = "High-entropy API key or token passed via URL query parameter"
-regex = '''[?&](?i:(?:api_?key|key|token|access_token|auth_token|license_key|secret))=([A-Za-z0-9._~+-]{16,128})'''
+id = "url-query-or-fragment-secret"
+description = "High-entropy API key, token, or signature in URL query parameter or OAuth fragment"
+regex = '''[?&#](?i:(?:api_?key|app_?key|key|token|access_token|auth_token|id_token|refresh_token|client_secret|license_key|secret|sig|signature))=([A-Za-z0-9._~+/=%-]{16,512})'''
 secretGroup = 1
-entropy = 3.2
+entropy = 3.3
 keywords = [
   "key=",
   "api_key=",
   "apikey=",
+  "app_key=",
+  "appkey=",
   "token=",
   "access_token=",
   "auth_token=",
+  "id_token=",
+  "refresh_token=",
+  "client_secret=",
   "license_key=",
   "secret=",
+  "sig=",
+  "signature=",
 ]
 
   [rules.allowlist]
