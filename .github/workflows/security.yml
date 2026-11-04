@@ -115,16 +115,22 @@ jobs:
           gitleaks version
 
       - name: Compose effective config and scan git history + working tree
+        env:
+          IS_BASELINE_REPO: ${{ steps.baseline_meta.outputs.repository == github.repository && 'true' || 'false' }}
         run: |
           set -euo pipefail
-          CALLER_ARGS=()
-          if [[ -f repo/.gitleaks.toml ]]; then
-            CALLER_ARGS=(--caller repo/.gitleaks.toml)
+          if [[ "$IS_BASELINE_REPO" == "true" ]]; then
+            EFFECTIVE_CONFIG="repo/.gitleaks.toml"
+          else
+            CALLER_ARGS=()
+            if [[ -f repo/.gitleaks.toml ]]; then
+              CALLER_ARGS=(--caller repo/.gitleaks.toml)
+            fi
+            EFFECTIVE_CONFIG="$(python3 baseline/scripts/prepare_gitleaks_config.py \
+              --baseline baseline/.gitleaks.toml \
+              "${CALLER_ARGS[@]}" \
+              --output /tmp/effective-gitleaks.toml)"
           fi
-          EFFECTIVE_CONFIG="$(python3 baseline/scripts/prepare_gitleaks_config.py \
-            --baseline baseline/.gitleaks.toml \
-            "${CALLER_ARGS[@]}" \
-            --output /tmp/effective-gitleaks.toml)"
           echo "Using composed gitleaks config: ${EFFECTIVE_CONFIG}"
 
           IGNORE_ARGS=()

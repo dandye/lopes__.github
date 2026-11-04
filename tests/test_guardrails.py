@@ -43,6 +43,18 @@ class PrepareGitleaksConfigTests(unittest.TestCase):
       self.assertEqual(res, baseline.resolve())
       self.assertFalse(out.exists())
 
+  def test_returns_baseline_when_caller_is_identical_checkout(self) -> None:
+    baseline = REPO_ROOT / ".gitleaks.toml"
+    with tempfile.TemporaryDirectory() as td:
+      cloned_baseline = Path(td) / "repo_checkout.toml"
+      cloned_baseline.write_bytes(baseline.read_bytes())
+      out = Path(td) / "effective.toml"
+      res = prepare_gitleaks_config.build_effective_config(
+          baseline, cloned_baseline, out
+      )
+      self.assertEqual(res, baseline.resolve())
+      self.assertFalse(out.exists())
+
   def test_composes_valid_caller_config_onto_baseline(self) -> None:
     baseline = REPO_ROOT / ".gitleaks.toml"
     with tempfile.TemporaryDirectory() as td:

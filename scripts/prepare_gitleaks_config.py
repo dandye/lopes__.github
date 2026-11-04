@@ -98,7 +98,10 @@ def build_effective_config(
     return baseline_abs
 
   caller_abs = caller_path.resolve()
-  if caller_abs == baseline_abs:
+  if (
+      caller_abs == baseline_abs
+      or caller_abs.read_bytes() == baseline_abs.read_bytes()
+  ):
     return baseline_abs
 
   raw_text = caller_abs.read_text(encoding="utf-8")
