@@ -15,10 +15,15 @@ on:
         type: string
         default: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
       trivy_severity:
-        description: "Trivy severity threshold for failing builds"
+        description: "Comma-separated Trivy severity threshold"
         required: false
         type: string
         default: "CRITICAL,HIGH"
+      trivy_ignore_unfixed:
+        description: "Whether Trivy ignores vulnerabilities without an upstream fix version"
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [main]
   pull_request:
@@ -297,24 +302,51 @@ jobs:
           fi
 
   trivy:
-    name: IaC & Supply Chain (trivy)
+    name: IaC & Supply Chain (SHA256-verified trivy)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
-      - name: Checkout repository
+      - name: Checkout caller repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Run Trivy filesystem vulnerability and misconfiguration scan
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,misconfig
-          severity: ${{ inputs.trivy_severity || 'CRITICAL,HIGH' }}
-          ignore-unfixed: true
-          exit-code: "1"
+      - name: Install SHA256-verified trivy
+        env:
+          TRIVY_VERSION: "0.76.1"
+          TRIVY_SHA256: "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0"
+        run: |
+          set -euo pipefail
+          TRIVY_URL="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL "$TRIVY_URL" -o /tmp/trivy.tar.gz
+          echo "${TRIVY_SHA256}  /tmp/trivy.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
+          sudo install -m 0755 /tmp/trivy /usr/local/bin/trivy
+          rm -f /tmp/trivy.tar.gz /tmp/trivy
+          trivy --version
+
+      - name: Run Trivy filesystem vulnerability and IaC misconfiguration scan
+        env:
+          TRIVY_SEVERITY_INPUT: ${{ inputs.trivy_severity || 'CRITICAL,HIGH' }}
+          TRIVY_IGNORE_UNFIXED_INPUT: ${{ inputs.trivy_ignore_unfixed && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TRIVY_SEVERITY_INPUT" =~ ^(UNKNOWN|LOW|MEDIUM|HIGH|CRITICAL)(,(UNKNOWN|LOW|MEDIUM|HIGH|CRITICAL))*$ ]]; then
+            echo "ERROR: Invalid trivy_severity value: ${TRIVY_SEVERITY_INPUT}" >&2
+            exit 1
+          fi
+
+          EXTRA_ARGS=()
+          if [[ "$TRIVY_IGNORE_UNFIXED_INPUT" == "true" ]]; then
+            EXTRA_ARGS+=(--ignore-unfixed)
+          fi
+
+          trivy fs \
+            --scanners vuln,misconfig \
+            --severity "$TRIVY_SEVERITY_INPUT" \
+            "${EXTRA_ARGS[@]}" \
+            --exit-code 1 \
+            .
