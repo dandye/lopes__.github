@@ -3,6 +3,17 @@ title = "github.com/lopes canonical gitleaks configuration"
 [extend]
 useDefault = true
 
+[[allowlists]]
+description = "Allow explicit uppercase synthetic test placeholders across built-in and custom rules without excluding test paths"
+regexTarget = "secret"
+regexes = [
+  '''^SYNTHETIC_TEST_[A-Z0-9_]{1,64}$''',
+  '''^REDACTED$''',
+  '''^EXAMPLE_[A-Z0-9_]{1,32}$''',
+  '''^DUMMY_[A-Z0-9_]{1,32}$''',
+  '''^YOUR_[A-Z0-9_]{1,32}_HERE$''',
+]
+
 [[rules]]
 id = "url-query-api-key"
 description = "High-entropy API key or token passed via URL query parameter"
@@ -21,15 +32,14 @@ keywords = [
 ]
 
   [rules.allowlist]
-  description = "Ignore explicit RFC/synthetic test placeholders"
+  description = "Ignore explicit uppercase synthetic test placeholders only"
   regexTarget = "secret"
   regexes = [
-    '''(?i)^SYNTHETIC_TEST_[A-Z0-9_]+$''',
-    '''(?i)^REDACTED$''',
-    '''(?i)^EXAMPLE_[A-Z0-9_]+$''',
-    '''(?i)^DUMMY_[A-Z0-9_]+$''',
-    '''(?i)^YOUR_[A-Z0-9_]+$''',
-    '''(?i)^test-only-[a-z0-9-]+$''',
+    '''^SYNTHETIC_TEST_[A-Z0-9_]{1,64}$''',
+    '''^REDACTED$''',
+    '''^EXAMPLE_[A-Z0-9_]{1,32}$''',
+    '''^DUMMY_[A-Z0-9_]{1,32}$''',
+    '''^YOUR_[A-Z0-9_]{1,32}_HERE$''',
   ]
 
 # Intentionally NO global path exclusions for tests/, spec/, fixtures/, docs/, or lockfiles
